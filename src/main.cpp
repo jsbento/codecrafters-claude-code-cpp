@@ -35,7 +35,7 @@ int main(int argc, char* argv[]) {
         {"model", "anthropic/claude-haiku-4.5"},
         {"messages", json::array({
             {{"role", "user"}, {"content", prompt}}
-        })}
+        })},
         {"tools", json::array({
             {
                 {"type", "function"},
