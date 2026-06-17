@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <iostream>
+#include <fstream>
 #include <string>
 
 #include <cpr/cpr.h>
@@ -78,11 +79,34 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    json choice = result["choices"][0];
+    json message = choice["message"];
+    if (message.contains("tool_calls") && !message["tool_calls"].empty()) {
+        json toolCall = message["tool_calls"][0];
+        std::string function = toolCall["function"]["name"].get<std::string>();
+        json argsJson = json::parse(toolCall["function"]["arguments"].get<std::string>());
+        if (function == "Read") {
+            if (!argsJson.contains("file_path")) {
+                std::cout << "file_path must be provided" << std::endl;
+                return 1;
+            }
+            std::string filePath = argsJson["file_path"].get<std::string>();
+            std::ifstream file{ filePath };
+            std::string fileLine;
+            while (getline(file, fileLine)) {
+                std::cout << fileLine;
+            }
+            file.close();
+        } else {
+            std::cerr << "Unsupported tool call: " << function << std::endl;
+            return 1;
+        }
+    } else {
+        std::cout << result["choices"][0]["message"]["content"].get<std::string>();
+    }
+
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     std::cerr << "Logs from your program will appear here!" << std::endl;
-
-    // TODO: Uncomment the line below to pass the first stage
-    std::cout << result["choices"][0]["message"]["content"].get<std::string>();
 
     return 0;
 }
