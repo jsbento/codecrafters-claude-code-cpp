@@ -1,0 +1,71 @@
+#ifndef AGENTS_HPP
+#define AGENTS_HPP
+
+#include <string>
+#include <optional>
+
+#include <cpr/cpr.h>
+
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
+
+namespace agent {
+  struct tool_call {
+    std::string id;
+    std::string type;
+    struct {
+      std::string name;
+      std::string arguments;
+    } function;
+  };
+
+  struct message {
+    std::string role;
+    std::optional<std::string> content;
+    std::optional<std::string> tool_call_id;
+    std::optional<std::vector<tool_call>> tool_calls;
+  };
+
+  void to_json(json& j, const tool_call& tc);
+  void from_json(const json& j, tool_call& tc);
+
+  void to_json(json& j, const message& m);
+  void from_json(const json& j, message& m);
+
+  static json tools = json::array({
+    {
+      {"type", "function"},
+      {"function", {
+        {"name", "Read"},
+        {"description", "Read and return the contents of a file."},
+        {"parameters", {
+          {"type", "object"},
+          {"properties", {
+            {"file_path", {
+              {"type", "string"},
+              {"description", "The path to the file to read"}
+            }}
+          }},
+          {"required", json::array({"file_path"})}
+        }}
+      }}
+    }
+  });
+
+  class ai_client {
+    public:
+      ai_client(std::string host, std::string key)
+        : _api_host{ host }, _api_key{ key }{}
+      
+      void set_model(std::string model) { _model = model; }
+      const std::string get_model() const { return _model; }
+
+      void do_req(std::vector<message>& messages);
+    private:
+      std::string _api_host;
+      std::string _api_key;
+      std::string _model;
+  };
+}
+
+#endif

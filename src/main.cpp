@@ -1,10 +1,13 @@
 #include <cstdlib>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <string>
+#include <vector>
 
-#include <cpr/cpr.h>
-#include <nlohmann/json.hpp>
+#include "agents.hpp"
+
+#define DEBUGMSG(msg) std::cerr << msg << std::endl
 
 using json = nlohmann::json;
 
@@ -32,81 +35,39 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    json request_body = {
-        {"model", "anthropic/claude-haiku-4.5"},
-        {"messages", json::array({
-            {{"role", "user"}, {"content", prompt}}
-        })},
-        {"tools", json::array({
-            {
-                {"type", "function"},
-                {"function", {
-                    {"name", "Read"},
-                    {"description", "Read and return the contents of a file."},
-                    {"parameters", {
-                        {"type", "object"},
-                        {"properties", {
-                            {"file_path", {
-                                {"type", "string"},
-                                {"description", "The path to the file to read"}
-                            }}
-                        }},
-                        {"required", json::array({"file_path"})}
-                    }}
-                }}
-            }
-        })}
-    };
+    agent::ai_client client(base_url, api_key);
+    client.set_model("anthropic/claude-haiku-4.5");
 
-    cpr::Response response = cpr::Post(
-        cpr::Url{base_url + "/chat/completions"},
-        cpr::Header{
-            {"Authorization", "Bearer " + api_key},
-            {"Content-Type", "application/json"}
-        },
-        cpr::Body{request_body.dump()}
-    );
+    std::vector<agent::message> messages;
+    messages.emplace_back(agent::message{ "user", prompt });
 
-    if (response.status_code != 200) {
-        std::cerr << "HTTP error: " << response.status_code << std::endl;
-        return 1;
-    }
+    while (true) {
+        client.do_req(messages);
+        agent::message message = messages.back();
 
-    json result = json::parse(response.text);
-
-    if (!result.contains("choices") || result["choices"].empty()) {
-        std::cerr << "No choices in response" << std::endl;
-        return 1;
-    }
-
-    json choice = result["choices"][0];
-    json message = choice["message"];
-    if (message.contains("tool_calls") && !message["tool_calls"].empty()) {
-        json toolCall = message["tool_calls"][0];
-        std::string function = toolCall["function"]["name"].get<std::string>();
-        json argsJson = json::parse(toolCall["function"]["arguments"].get<std::string>());
-        if (function == "Read") {
-            if (!argsJson.contains("file_path")) {
-                std::cout << "file_path must be provided" << std::endl;
-                return 1;
-            }
-            std::string filePath = argsJson["file_path"].get<std::string>();
-            std::ifstream file{ filePath };
-            std::string fileLine;
-            while (getline(file, fileLine)) {
-                std::cout << fileLine;
-            }
-            file.close();
-        } else {
-            std::cerr << "Unsupported tool call: " << function << std::endl;
-            return 1;
+        if (!message.tool_calls) {
+            std::cout << *message.content << std::endl;
+            return 0;
         }
-    } else {
-        std::cout << result["choices"][0]["message"]["content"].get<std::string>();
-    }
 
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    std::cerr << "Logs from your program will appear here!" << std::endl;
+        for (auto tool_call : *message.tool_calls) {
+            if (tool_call.function.name == "Read") {
+                json args = json::parse(tool_call.function.arguments);
+
+                std::ifstream file(args["file_path"].get<std::string>());
+                std::ostringstream ss;
+                ss << file.rdbuf();
+                file.close();
+                std::string content = ss.str();
+
+                messages.emplace_back(agent::message{
+                    .role = "tool",
+                    .content = content,
+                    .tool_call_id = tool_call.id
+                });
+            }
+        }
+    }
 
     return 0;
 }
