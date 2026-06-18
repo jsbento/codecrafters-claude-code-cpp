@@ -51,8 +51,9 @@ int main(int argc, char* argv[]) {
         }
 
         for (auto tool_call : *message.tool_calls) {
-            if (tool_call.function.name == "Read") {
-                json args = json::parse(tool_call.function.arguments);
+            auto f = tool_call.function;
+            if (f.name == "Read") {
+                json args = json::parse(f.arguments);
 
                 std::ifstream file(args["file_path"].get<std::string>());
                 std::ostringstream ss;
@@ -63,6 +64,25 @@ int main(int argc, char* argv[]) {
                 messages.emplace_back(agent::message{
                     .role = "tool",
                     .content = content,
+                    .tool_call_id = tool_call.id
+                });
+            }
+            if (f.name == "Write") {
+                json args = json::parse(f.arguments);
+                std::string file_path = args["file_path"].get<std::string>();
+                std::string content = args["content"].get<std::string>();
+
+                std::ofstream file(file_path);
+                if (!file.is_open()) {
+                    std::cerr << "Unable to open file: " << file_path << std::endl;
+                }
+
+                file << content << std::endl;
+                file.close();
+
+                messages.emplace_back(agent::message{
+                    .role = "tool",
+                    .content = message.content,
                     .tool_call_id = tool_call.id
                 });
             }
