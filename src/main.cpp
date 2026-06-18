@@ -81,7 +81,6 @@ int main(int argc, char* argv[]) {
             }
             if (f.name == "Bash") {
                 std::string command = args["command"].get<std::string>();
-
                 std::string result = utils::exec_cmd(command);
 
                 add_message(messages, "tool", result, tool_call.id);
