@@ -4,6 +4,8 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <memory>
+#include <array>
 
 #include "agents.hpp"
 
@@ -52,9 +54,8 @@ int main(int argc, char* argv[]) {
 
         for (auto tool_call : *message.tool_calls) {
             auto f = tool_call.function;
+            json args = json::parse(f.arguments);
             if (f.name == "Read") {
-                json args = json::parse(f.arguments);
-
                 std::ifstream file(args["file_path"].get<std::string>());
                 std::ostringstream ss;
                 ss << file.rdbuf();
@@ -68,7 +69,6 @@ int main(int argc, char* argv[]) {
                 });
             }
             if (f.name == "Write") {
-                json args = json::parse(f.arguments);
                 std::string file_path = args["file_path"].get<std::string>();
                 std::string content = args["content"].get<std::string>();
 
@@ -83,6 +83,27 @@ int main(int argc, char* argv[]) {
                 messages.emplace_back(agent::message{
                     .role = "tool",
                     .content = message.content,
+                    .tool_call_id = tool_call.id
+                });
+            }
+            if (f.name == "Bash") {
+                std::string command = args["command"].get<std::string>();
+
+                std::array<char, 128> buffer;
+                std::string result;
+
+                std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
+                if (!pipe) {
+                    std::cerr << "popen() failed" << std::endl;
+                    return 1;
+                }
+                while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+                    result += buffer.data();
+                }
+
+                messages.emplace_back(agent::message{
+                    .role = "tool",
+                    .content = result,
                     .tool_call_id = tool_call.id
                 });
             }
