@@ -1,5 +1,4 @@
-#ifndef AGENTS_HPP
-#define AGENTS_HPP
+#pragma once
 
 #include <string>
 #include <optional>
@@ -105,5 +104,3 @@ namespace agent {
       std::string _model;
   };
 }
-
-#endif

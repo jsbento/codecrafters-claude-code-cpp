@@ -1,17 +1,27 @@
 #include <cstdlib>
 #include <iostream>
-#include <fstream>
-#include <sstream>
 #include <string>
 #include <vector>
-#include <memory>
-#include <array>
 
 #include "agents.hpp"
+#include "utils.hpp"
 
 #define DEBUGMSG(msg) std::cerr << msg << std::endl
 
 using json = nlohmann::json;
+
+inline void add_message(
+    std::vector<agent::message>& messages,
+    std::string role,
+    std::optional<std::string> content,
+    std::optional<std::string> tool_call_id
+) {
+    messages.emplace_back(agent::message{
+        .role = std::move(role),
+        .content = std::move(content),
+        .tool_call_id = std::move(tool_call_id)
+    });
+}
 
 int main(int argc, char* argv[]) {
     if (argc < 3 || std::string(argv[1]) != "-p") {
@@ -56,56 +66,25 @@ int main(int argc, char* argv[]) {
             auto f = tool_call.function;
             json args = json::parse(f.arguments);
             if (f.name == "Read") {
-                std::ifstream file(args["file_path"].get<std::string>());
-                std::ostringstream ss;
-                ss << file.rdbuf();
-                file.close();
-                std::string content = ss.str();
+                std::string file_path = args["file_path"].get<std::string>();
+                std::string content = utils::read_file(file_path);
 
-                messages.emplace_back(agent::message{
-                    .role = "tool",
-                    .content = content,
-                    .tool_call_id = tool_call.id
-                });
+                add_message(messages, "tool", content, tool_call.id);
             }
             if (f.name == "Write") {
                 std::string file_path = args["file_path"].get<std::string>();
                 std::string content = args["content"].get<std::string>();
 
-                std::ofstream file(file_path);
-                if (!file.is_open()) {
-                    std::cerr << "Unable to open file: " << file_path << std::endl;
-                }
+                utils::write_file(file_path, content);
 
-                file << content << std::endl;
-                file.close();
-
-                messages.emplace_back(agent::message{
-                    .role = "tool",
-                    .content = message.content,
-                    .tool_call_id = tool_call.id
-                });
+                add_message(messages, "tool", message.content, tool_call.id);
             }
             if (f.name == "Bash") {
                 std::string command = args["command"].get<std::string>();
 
-                std::array<char, 128> buffer;
-                std::string result;
+                std::string result = utils::exec_cmd(command);
 
-                std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
-                if (!pipe) {
-                    std::cerr << "popen() failed" << std::endl;
-                    return 1;
-                }
-                while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
-                    result += buffer.data();
-                }
-
-                messages.emplace_back(agent::message{
-                    .role = "tool",
-                    .content = result,
-                    .tool_call_id = tool_call.id
-                });
+                add_message(messages, "tool", result, tool_call.id);
             }
         }
     }
