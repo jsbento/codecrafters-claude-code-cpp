@@ -7,22 +7,28 @@
 #include "utils.hpp"
 
 namespace skills {
-  std::optional<std::pair<std::string, std::string>> read_skill_metadata(std::filesystem::path skill_path) {
-    if (!std::filesystem::exists(skill_path)) return std::nullopt;
+  std::string skill::get_content() {
+    std::string raw_content = utils::read_file(_path);
+    size_t content_start = raw_content.rfind(metadata_delim);
+    return utils::trim(raw_content.substr(content_start + metadata_delim.length()));
+  }
 
-    const std::string delim = "---";
-    std::string metadata =  utils::trim(utils::read_between(skill_path, delim, delim));
+  void skill::load_metadata() {
+    if (!std::filesystem::exists(_path)) return;
+
+    std::string metadata =  utils::trim(utils::read_between(_path, metadata_delim, metadata_delim));
     size_t separator = metadata.find('\n');
-    if (separator == std::string::npos) return std::nullopt;
+    if (separator == std::string::npos) return;
 
     std::string name = metadata.substr(0, separator);
     std::string description = metadata.substr(separator + 1);
 
-    return {
-      {
-        name.substr(name.find(' ') + 1),
-        description.substr(description.find(' ') + 1)
-      }
+    _name = name.substr(name.find(' ') + 1);
+    _description = description.substr(description.find(' ') + 1);
+
+    std::pair<std::string, std::string> p_metadata = {
+      _name, _description
     };
+    _metadata = &p_metadata;
   }
 }

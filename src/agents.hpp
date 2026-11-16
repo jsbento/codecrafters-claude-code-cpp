@@ -92,7 +92,8 @@ namespace agent {
   class ai_client {
     public:
       ai_client(std::string host, std::string key)
-        : _api_host{ host }, _api_key{ key }{}
+        : _api_host{ host }, _api_key{ key }
+      {}
       
       void set_model(std::string model) { _model = model; }
       const std::string get_model() const { return _model; }
