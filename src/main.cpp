@@ -5,6 +5,7 @@
 
 #include "agents.hpp"
 #include "utils.hpp"
+#include "skills.hpp"
 
 #define DEBUGMSG(msg) std::cerr << msg << std::endl
 
@@ -50,8 +51,27 @@ int main(int argc, char* argv[]) {
     agent::ai_client client(base_url, api_key);
     client.set_model("anthropic/claude-haiku-4.5");
 
+    std::vector<std::filesystem::path> skill_paths;
+    utils::read_dir(".claude/skills", skill_paths);
+
+    std::vector<std::pair<std::string, std::string>> skills_meta;
+    for (const auto& skill_path : skill_paths) {
+        std::optional<std::pair<std::string, std::string>> skill_meta = skills::read_skill_metadata(skill_path);
+        if (skill_meta == std::nullopt) continue;
+        skills_meta.emplace_back(skill_meta.value());
+    }
+
     std::vector<agent::message> messages;
-    messages.emplace_back(agent::message{ "user", prompt });
+
+    if (skills_meta.size() > 0) {
+        std::string skills_msg = "You have access to the following skills:\n\n";
+        for (const auto& skill_meta : skills_meta) {
+            skills_msg += "- " + skill_meta.first + ": " + skill_meta.second + "\n";
+        }
+        messages.emplace_back(agent::message{"system", skills_msg});
+    }
+
+    messages.emplace_back(agent::message{"user", prompt});
 
     while (true) {
         client.do_req(messages);

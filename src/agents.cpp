@@ -53,8 +53,8 @@ namespace agent {
   void ai_client::do_req(std::vector<message>& messages) {
     json req_body = {
       {"model", _model},
-      {"messages", messages},
-      {"tools", tools}
+      {"tools", tools},
+      {"messages", messages}
     };
 
     cpr::Response resp = cpr::Post(
@@ -67,7 +67,7 @@ namespace agent {
     );
 
     if (resp.status_code != 200) {
-      std::cerr << "HTTP error: " << resp.status_code << std::endl;
+      std::cerr << "HTTP error: " << resp.status_code << std::endl << resp.text << std::endl;
       return;
     }
 
