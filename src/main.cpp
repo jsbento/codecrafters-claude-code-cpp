@@ -83,7 +83,7 @@ int main(int argc, char* argv[]) {
             }
         }
     } else {
-        messages.emplace_back(agent::message{"user", prompt});
+        messages.emplace_back(agent::message{"user", input.content});
     }
 
     while (true) {

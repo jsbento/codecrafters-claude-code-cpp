@@ -16,8 +16,9 @@ namespace skills {
         content.replace(content.find("$ARGUMENTS"), 10, utils::join(input.args));
       for (int i = 0; i < input.args.size(); i++) {
         std::string arg = "$" + std::to_string(i);
-        if (content.find(arg) == std::string::npos) return content;
-        content.replace(content.find(arg), arg.length(), input.args[i]);
+        if (content.find(arg) == std::string::npos) break;
+
+        content = content.replace(content.find(arg), arg.length(), input.args[i]);
       }
     }
     return content;
