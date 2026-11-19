@@ -6,6 +6,7 @@
 #include "agents.hpp"
 #include "utils.hpp"
 #include "skills.hpp"
+#include "parser.hpp"
 
 #define DEBUGMSG(msg) std::cerr << msg << std::endl
 
@@ -31,11 +32,14 @@ int main(int argc, char* argv[]) {
     }
 
     std::string prompt = argv[2];
+    prompt = utils::trim(prompt);
 
     if (prompt.empty()) {
         std::cerr << "Prompt must not be empty" << std::endl;
         return 1;
     }
+    parser::input input;
+    parser::parse_input(prompt, input);
 
     const char* api_key_env = std::getenv("OPENROUTER_API_KEY");
     const char* base_url_env = std::getenv("OPENROUTER_BASE_URL");
@@ -71,10 +75,10 @@ int main(int argc, char* argv[]) {
         messages.emplace_back(agent::message{"system", skills_msg});
     }
 
-    if (prompt[0] == '/') {
+    if (input.type == parser::input_type::COMMAND) {
         for (auto& skill : skills) {
-            if (prompt.find("/" + skill.name()) != std::string::npos) {
-                messages.emplace_back(agent::message{"user", skill.get_content()});
+            if (prompt.find("/" + input.command) != std::string::npos) {
+                messages.emplace_back(agent::message{"user", skill.get_content(input)});
                 break;
             }
         }

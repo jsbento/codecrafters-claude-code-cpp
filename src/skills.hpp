@@ -5,6 +5,8 @@
 #include <utility>
 #include <optional>
 
+#include "parser.hpp"
+
 namespace skills {
   class skill {
     public:
@@ -14,7 +16,7 @@ namespace skills {
         load_metadata();
       }
 
-      std::string get_content();
+      std::string get_content(const parser::input& input);
 
       const bool is_valid() const {
         return _metadata != nullptr && _name != "";

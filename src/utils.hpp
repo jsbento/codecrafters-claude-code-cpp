@@ -16,4 +16,7 @@ namespace utils {
   void read_dir(std::filesystem::path path, std::vector<std::filesystem::path>& out);
 
   std::string exec_cmd(std::string cmd);
+
+  std::vector<std::string> split(const std::string& str, char delim);
+  std::string join(const std::vector<std::string>& words);
 }

@@ -95,4 +95,21 @@ namespace utils {
 
     return result;
   }
+
+  std::vector<std::string> split(const std::string& str, char delim) {
+    std::vector<std::string> parts;
+    std::stringstream ss(str);
+    std::string part;
+
+    while(std::getline(ss, part, delim))
+      parts.push_back(part);
+    return parts;
+  }
+
+  std::string join(const std::vector<std::string>& words) {
+    std::string out = "";
+    for(const std::string& word : words)
+      out += word;
+    return out;
+  }
 }
