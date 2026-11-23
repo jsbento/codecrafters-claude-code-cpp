@@ -2,24 +2,22 @@
 
 #include <string>
 #include <filesystem>
-#include <utility>
-#include <optional>
 
 #include "parser.hpp"
 
 namespace skills {
   class skill {
     public:
-      skill(std::filesystem::path path)
-        : _path{ path }
+      explicit skill(std::filesystem::path path)
+        : _path{ std::move(path) }
       {
         load_metadata();
       }
 
-      std::string get_content(const parser::input& input);
+      std::string get_content(const parser::input& input) const;
 
-      const bool is_valid() const {
-        return _metadata != nullptr && _name != "";
+      bool is_valid() const {
+        return !_name.empty();
       }
 
       const std::string& name() const {
@@ -37,6 +35,5 @@ namespace skills {
       std::filesystem::path _path;
       std::string _name;
       std::string _description;
-      std::pair<std::string, std::string>* _metadata;
   };
 }

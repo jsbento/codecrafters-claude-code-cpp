@@ -1,16 +1,17 @@
 #pragma once
 
-#include <string>
+#include <map>
 #include <optional>
+#include <string>
+#include <vector>
 
-#include <cpr/cpr.h>
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
 #include "skills.hpp"
 
 namespace agent {
-  static const std::string SKILLS_BASE_PATH = ".claude/skills";
+  inline const std::string SKILLS_BASE_PATH = ".claude/skills";
 
   struct tool_call {
     std::string id;
@@ -23,9 +24,9 @@ namespace agent {
 
   struct message {
     std::string role;
-    std::optional<std::string> content;
-    std::optional<std::string> tool_call_id;
-    std::optional<std::vector<tool_call>> tool_calls;
+    std::optional<std::string> content{};
+    std::optional<std::string> tool_call_id{};
+    std::optional<std::vector<tool_call>> tool_calls{};
   };
 
   void to_json(json& j, const tool_call& tc);
@@ -34,89 +35,37 @@ namespace agent {
   void to_json(json& j, const message& m);
   void from_json(const json& j, message& m);
 
-  static json tools = json::array({
-    {
-      {"type", "function"},
-      {"function", {
-        {"name", "Read"},
-        {"description", "Read and return the contents of a file"},
-        {"parameters", {
-          {"type", "object"},
-          {"properties", {
-            {"file_path", {
-              {"type", "string"},
-              {"description", "The path of the file to read"}
-            }}
-          }},
-          {"required", json::array({"file_path"})}
-        }}
-      }}
-    },
-    {
-      {"type", "function"},
-      {"function", {
-        {"name", "Write"},
-        {"description", "Write content to a file"},
-        {"parameters", {
-          {"type", "object"},
-          {"properties", {
-            {"file_path", {
-              {"type", "string"},
-              {"description", "The path of the file to write to"}
-            }},
-            {"content", {
-              {"type", "string"},
-              {"description", "The content to write to the file"}
-            }}
-          }},
-          {"required", json::array({"file_path", "content"})}
-        }}
-      }}
-    },
-    {
-      {"type", "function"},
-      {"function", {
-        {"name", "Bash"},
-        {"description", "Execute a shell command"},
-        {"parameters", {
-          {"type", "object"},
-          {"properties", {
-            {"command", {
-              {"type", "string"},
-              {"description", "The command to execute"}
-            }}
-          }},
-          {"required", json::array({"command"})}
-        }}
-      }}
-    }
-  });
-
   class ai_client {
     public:
       ai_client(std::string host, std::string key)
-        : _api_host{ host }, _api_key{ key }
+        : _api_host{ std::move(host) }, _api_key{ std::move(key) }
       {
         load_skills();
       }
-      
-      void set_model(std::string model) { _model = model; }
-      const std::string get_model() const { return _model; }
 
+      void set_model(std::string model) { _model = std::move(model); }
+      const std::string& get_model() const { return _model; }
+
+      // Sends messages to the API and appends the assistant's reply.
+      // Throws std::runtime_error on an HTTP error or an empty response.
       void do_req(std::vector<message>& messages);
 
-      bool has_skill(const std::string& name) const {
-        return _skill_cache.count(name) > 0;
+      const skills::skill* find_skill(const std::string& name) const {
+        auto it = _skills.find(name);
+        return it == _skills.end() ? nullptr : &it->second;
       }
 
-      void add_skill_messages(std::vector<message>& messages);
+      bool has_skill(const std::string& name) const {
+        return _skills.contains(name);
+      }
+
+      void add_skill_messages(std::vector<message>& messages) const;
     private:
       void load_skills();
 
       std::string _api_host;
       std::string _api_key;
       std::string _model;
-      std::vector<skills::skill> _skills;
-      std::unordered_map<std::string, bool> _skill_cache;
+      std::map<std::string, skills::skill> _skills; // keyed by skill name
   };
 }

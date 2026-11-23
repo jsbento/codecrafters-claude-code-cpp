@@ -1,9 +1,71 @@
-#include <iostream>
+#include <stdexcept>
+
+#include <cpr/cpr.h>
 
 #include "agents.hpp"
 #include "utils.hpp"
 
 namespace agent {
+  namespace {
+    const json tools = json::array({
+      {
+        {"type", "function"},
+        {"function", {
+          {"name", "Read"},
+          {"description", "Read and return the contents of a file"},
+          {"parameters", {
+            {"type", "object"},
+            {"properties", {
+              {"file_path", {
+                {"type", "string"},
+                {"description", "The path of the file to read"}
+              }}
+            }},
+            {"required", json::array({"file_path"})}
+          }}
+        }}
+      },
+      {
+        {"type", "function"},
+        {"function", {
+          {"name", "Write"},
+          {"description", "Write content to a file"},
+          {"parameters", {
+            {"type", "object"},
+            {"properties", {
+              {"file_path", {
+                {"type", "string"},
+                {"description", "The path of the file to write to"}
+              }},
+              {"content", {
+                {"type", "string"},
+                {"description", "The content to write to the file"}
+              }}
+            }},
+            {"required", json::array({"file_path", "content"})}
+          }}
+        }}
+      },
+      {
+        {"type", "function"},
+        {"function", {
+          {"name", "Bash"},
+          {"description", "Execute a shell command"},
+          {"parameters", {
+            {"type", "object"},
+            {"properties", {
+              {"command", {
+                {"type", "string"},
+                {"description", "The command to execute"}
+              }}
+            }},
+            {"required", json::array({"command"})}
+          }}
+        }}
+      }
+    });
+  }
+
   void to_json(json& j, const tool_call& tc) {
     j = json{
       {"id", tc.id},
@@ -68,42 +130,40 @@ namespace agent {
     );
 
     if (resp.status_code != 200) {
-      std::cerr << "HTTP error: " << resp.status_code << std::endl << resp.text << std::endl;
-      return;
+      throw std::runtime_error(
+        "HTTP error " + std::to_string(resp.status_code) + ":\n" + resp.text);
     }
 
     json result = json::parse(resp.text);
     if (!result.contains("choices") || result["choices"].empty()) {
-      std::cerr << "No choices in response" << std::endl;
-      return;
+      throw std::runtime_error("No choices in response:\n" + resp.text);
     }
 
-    json m_json = result["choices"][0]["message"];
-    messages.emplace_back(m_json.get<message>());
+    messages.push_back(result["choices"][0]["message"].get<message>());
   }
 
-  void ai_client::add_skill_messages(std::vector<message>& messages) {
-    if (_skills.size() == 0) return;
+  void ai_client::add_skill_messages(std::vector<message>& messages) const {
+    if (_skills.empty()) return;
 
     std::string skills_msg = "You have access to the following skills:\n\n";
-    for (const auto& skill : _skills) {
-      if (!skill.is_valid()) continue;
-      skills_msg += "- " + skill.name() + ": " + skill.description() + "\n";
+    for (const auto& [name, skill] : _skills) {
+      skills_msg += "- " + name + ": " + skill.description() + "\n";
     }
-    messages.emplace_back(message{"system", skills_msg});
+    messages.push_back(message{"system", std::move(skills_msg)});
   }
 
   void ai_client::load_skills() {
     _skills.clear();
-    _skill_cache.clear();
 
     std::vector<std::filesystem::path> skill_paths;
     utils::read_dir(SKILLS_BASE_PATH, skill_paths);
 
-    for (const auto& skill_path : skill_paths) {
-      skills::skill skill(skill_path);
-      _skills.emplace_back(skills::skill(skill));
-      _skill_cache[skill.name()] = true;
+    for (auto& skill_path : skill_paths) {
+      skills::skill skill(std::move(skill_path));
+      // Skip files without valid metadata (e.g. helper files in a skill folder).
+      if (!skill.is_valid()) continue;
+      std::string name = skill.name();
+      _skills.emplace(std::move(name), std::move(skill));
     }
   }
 }

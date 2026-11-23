@@ -1,120 +1,116 @@
 #include <cstdlib>
+#include <exception>
+#include <functional>
 #include <iostream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "agents.hpp"
 #include "utils.hpp"
-#include "skills.hpp"
 #include "parser.hpp"
 
-#define DEBUGMSG(msg) std::cerr << msg << std::endl
+namespace {
+  using tool_handler = std::function<std::string(const json&)>;
 
-using json = nlohmann::json;
+  // Each handler takes the tool call's parsed arguments and returns the text
+  // sent back to the model. Errors are reported in that text so the model can
+  // react to them.
+  const std::unordered_map<std::string, tool_handler> tool_handlers = {
+    {"Read", [](const json& args) -> std::string {
+      const auto path = args.at("file_path").get<std::string>();
+      auto content = utils::read_file(path);
+      if (!content) return "Error: could not read file: " + path;
+      return *std::move(content);
+    }},
+    {"Write", [](const json& args) -> std::string {
+      const auto path = args.at("file_path").get<std::string>();
+      const auto content = args.at("content").get<std::string>();
+      if (!utils::write_file(path, content)) return "Error: could not write file: " + path;
+      return "Wrote " + std::to_string(content.size()) + " bytes to " + path;
+    }},
+    {"Bash", [](const json& args) -> std::string {
+      auto result = utils::exec_cmd(args.at("command").get<std::string>());
+      if (result.exit_code == 0) return std::move(result.output);
+      return "Exit code " + std::to_string(result.exit_code) + "\n" + result.output;
+    }},
+  };
 
-inline void add_message(
-    std::vector<agent::message>& messages,
-    std::string role,
-    std::optional<std::string> content,
-    std::optional<std::string> tool_call_id
-) {
-    messages.emplace_back(agent::message{
-        .role = std::move(role),
-        .content = std::move(content),
-        .tool_call_id = std::move(tool_call_id)
-    });
+  std::string run_tool(const agent::tool_call& call) {
+    auto it = tool_handlers.find(call.function.name);
+    if (it == tool_handlers.end()) return "Error: unknown tool: " + call.function.name;
+
+    try {
+      return it->second(json::parse(call.function.arguments));
+    } catch (const json::exception& e) {
+      return std::string("Error: invalid arguments: ") + e.what();
+    }
+  }
 }
 
 int main(int argc, char* argv[]) {
-    if (argc < 3 || std::string(argv[1]) != "-p") {
-        std::cerr << "Expected first argument to be '-p'" << std::endl;
-        return 1;
+  if (argc < 3 || std::string(argv[1]) != "-p") {
+    std::cerr << "Expected first argument to be '-p'" << std::endl;
+    return 1;
+  }
+
+  const std::string prompt = utils::trim(argv[2]);
+  if (prompt.empty()) {
+    std::cerr << "Prompt must not be empty" << std::endl;
+    return 1;
+  }
+
+  const char* api_key_env = std::getenv("OPENROUTER_API_KEY");
+  const char* base_url_env = std::getenv("OPENROUTER_BASE_URL");
+
+  std::string api_key = api_key_env ? api_key_env : "";
+  std::string base_url = base_url_env ? base_url_env : "https://openrouter.ai/api/v1";
+
+  if (api_key.empty()) {
+    std::cerr << "OPENROUTER_API_KEY is not set" << std::endl;
+    return 1;
+  }
+
+  agent::ai_client client(std::move(base_url), std::move(api_key));
+  client.set_model("anthropic/claude-haiku-4.5");
+
+  std::vector<parser::input> inputs;
+  parser::parse_input(client, prompt, inputs);
+
+  std::vector<agent::message> messages;
+  client.add_skill_messages(messages);
+
+  for (const parser::input& input : inputs) {
+    if (input.type == parser::input_type::COMMAND) {
+      if (const skills::skill* skill = client.find_skill(input.command)) {
+        messages.push_back({.role = "user", .content = skill->get_content(input)});
+      }
+    } else {
+      messages.push_back({.role = "user", .content = input.content});
     }
+  }
 
-    std::string prompt = argv[2];
-    prompt = utils::trim(prompt);
-
-    if (prompt.empty()) {
-        std::cerr << "Prompt must not be empty" << std::endl;
-        return 1;
-    }
-
-    const char* api_key_env = std::getenv("OPENROUTER_API_KEY");
-    const char* base_url_env = std::getenv("OPENROUTER_BASE_URL");
-
-    std::string api_key = api_key_env ? api_key_env : "";
-    std::string base_url = base_url_env ? base_url_env : "https://openrouter.ai/api/v1";
-
-    if (api_key.empty()) {
-        std::cerr << "OPENROUTER_API_KEY is not set" << std::endl;
-        return 1;
-    }
-
-    agent::ai_client client(base_url, api_key);
-    client.set_model("anthropic/claude-haiku-4.5");
-
-    std::vector<parser::input> inputs;
-    parser::parse_input(client, prompt, inputs);
-
-    std::vector<std::filesystem::path> skill_paths;
-    utils::read_dir(".claude/skills", skill_paths);
-
-    std::vector<skills::skill> skills;
-    for (const auto& skill_path : skill_paths) {
-        skills::skill skill(skill_path);
-        skills.emplace_back(skill);
-    }
-
-    std::vector<agent::message> messages;
-
-    client.add_skill_messages(messages);
-
-    for (const parser::input& input : inputs) {
-        if (input.type == parser::input_type::COMMAND) {
-            for (auto& skill : skills) {
-                if (skill.name() == input.command) {
-                    messages.emplace_back(agent::message{"user", skill.get_content(input)});
-                }
-            }
-        } else {
-            messages.emplace_back(agent::message{"user", input.content});
-        }
-    }
-
+  try {
     while (true) {
-        client.do_req(messages);
-        agent::message message = messages.back();
+      client.do_req(messages);
 
-        if (!message.tool_calls) {
-            std::cout << *message.content << std::endl;
-            return 0;
-        }
+      // Copied because pushing tool results below can reallocate `messages`.
+      const auto tool_calls = messages.back().tool_calls;
+      if (!tool_calls) {
+        std::cout << messages.back().content.value_or("") << std::endl;
+        return 0;
+      }
 
-        for (auto tool_call : *message.tool_calls) {
-            auto f = tool_call.function;
-            json args = json::parse(f.arguments);
-            if (f.name == "Read") {
-                std::string file_path = args["file_path"].get<std::string>();
-                std::string content = utils::read_file(file_path);
-
-                add_message(messages, "tool", content, tool_call.id);
-            }
-            if (f.name == "Write") {
-                std::string file_path = args["file_path"].get<std::string>();
-                std::string content = args["content"].get<std::string>();
-
-                utils::write_file(file_path, content);
-
-                add_message(messages, "tool", message.content, tool_call.id);
-            }
-            if (f.name == "Bash") {
-                std::string command = args["command"].get<std::string>();
-                std::string result = utils::exec_cmd(command);
-
-                add_message(messages, "tool", result, tool_call.id);
-            }
-        }
+      for (const agent::tool_call& call : *tool_calls) {
+        messages.push_back({
+          .role = "tool",
+          .content = run_tool(call),
+          .tool_call_id = call.id,
+        });
+      }
     }
-
-    return 0;
+  } catch (const std::exception& e) {
+    std::cerr << e.what() << std::endl;
+    return 1;
+  }
 }

@@ -1,8 +1,9 @@
+#include <array>
+#include <cstdio>
 #include <fstream>
 #include <sstream>
-#include <memory>
-#include <array>
-#include <iostream>
+
+#include <sys/wait.h>
 
 #include "utils.hpp"
 
@@ -17,12 +18,12 @@ namespace utils {
     return str.substr(start, end - start + 1);
   }
 
-  std::string read_file(std::string path) {
+  std::optional<std::string> read_file(const std::filesystem::path& path) {
     std::ifstream file(path);
+    if (!file.is_open()) return std::nullopt;
+
     std::ostringstream ss;
     ss << file.rdbuf();
-    file.close();
-
     return ss.str();
   }
 
@@ -57,43 +58,46 @@ namespace utils {
     return result;
   }
 
-  void write_file(std::string path, std::string content) {
+  bool write_file(const std::filesystem::path& path, const std::string& content) {
     std::ofstream file(path);
-    if (file.is_open()) {
-      file << content << std::endl;
-      file.close();
-    }
+    if (!file.is_open()) return false;
+
+    file << content;
+    return static_cast<bool>(file);
   }
 
-  void read_dir(std::filesystem::path path, std::vector<std::filesystem::path>& out) {
+  void read_dir(const std::filesystem::path& path, std::vector<std::filesystem::path>& out) {
     namespace fs = std::filesystem;
 
-    if (!(fs::exists(path) && fs::is_directory(path))) return;
+    if (!fs::is_directory(path)) return;
 
     for (const auto& entry : fs::directory_iterator(path)) {
-      fs::path entry_name = entry.path().filename();
       if (entry.is_directory()) {
-        fs::path entry_path = path / entry_name;
-        read_dir(entry_path, out);
+        read_dir(entry.path(), out);
       } else {
-        out.emplace_back(path / entry_name);
+        out.push_back(entry.path());
       }
     }
   }
 
-  std::string exec_cmd(std::string cmd) {
-    std::array<char, 128> buffer;
-    std::string result;
+  cmd_result exec_cmd(const std::string& cmd) {
+    // Group the command so stderr is captured for every part of a compound
+    // command (`a; b`), not just the last one. The newline ends any trailing
+    // `#` comment before the closing brace.
+    const std::string full_cmd = "{ " + cmd + "\n} 2>&1";
+    FILE* pipe = popen(full_cmd.c_str(), "r");
+    if (!pipe) return {-1, "Error: failed to start command"};
 
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe) {
-        return result;
-    }
-    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
-        result += buffer.data();
+    std::array<char, 4096> buffer;
+    std::string output;
+    size_t n;
+    while ((n = fread(buffer.data(), 1, buffer.size(), pipe)) > 0) {
+      output.append(buffer.data(), n);
     }
 
-    return result;
+    int status = pclose(pipe);
+    int exit_code = (status != -1 && WIFEXITED(status)) ? WEXITSTATUS(status) : -1;
+    return {exit_code, std::move(output)};
   }
 
   std::vector<std::string> split(const std::string& str, char delim) {
@@ -101,15 +105,18 @@ namespace utils {
     std::stringstream ss(str);
     std::string part;
 
-    while(std::getline(ss, part, delim))
-      parts.push_back(part);
+    while (std::getline(ss, part, delim)) {
+      if (!part.empty()) parts.push_back(std::move(part));
+    }
     return parts;
   }
 
-  std::string join(const std::vector<std::string>& words) {
-    std::string out = "";
-    for(const std::string& word : words)
-      out += word;
+  std::string join(const std::vector<std::string>& words, const std::string& sep) {
+    std::string out;
+    for (size_t i = 0; i < words.size(); i++) {
+      if (i > 0) out += sep;
+      out += words[i];
+    }
     return out;
   }
 }
