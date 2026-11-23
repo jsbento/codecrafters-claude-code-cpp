@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include "agents.hpp"
+#include "utils.hpp"
 
 namespace agent {
   void to_json(json& j, const tool_call& tc) {
@@ -79,5 +80,30 @@ namespace agent {
 
     json m_json = result["choices"][0]["message"];
     messages.emplace_back(m_json.get<message>());
+  }
+
+  void ai_client::add_skill_messages(std::vector<message>& messages) {
+    if (_skills.size() == 0) return;
+
+    std::string skills_msg = "You have access to the following skills:\n\n";
+    for (const auto& skill : _skills) {
+      if (!skill.is_valid()) continue;
+      skills_msg += "- " + skill.name() + ": " + skill.description() + "\n";
+    }
+    messages.emplace_back(message{"system", skills_msg});
+  }
+
+  void ai_client::load_skills() {
+    _skills.clear();
+    _skill_cache.clear();
+
+    std::vector<std::filesystem::path> skill_paths;
+    utils::read_dir(SKILLS_BASE_PATH, skill_paths);
+
+    for (const auto& skill_path : skill_paths) {
+      skills::skill skill(skill_path);
+      _skills.emplace_back(skills::skill(skill));
+      _skill_cache[skill.name()] = true;
+    }
   }
 }

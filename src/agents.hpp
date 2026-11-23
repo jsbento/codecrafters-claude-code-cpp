@@ -4,11 +4,14 @@
 #include <optional>
 
 #include <cpr/cpr.h>
-
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
+#include "skills.hpp"
+
 namespace agent {
+  static const std::string SKILLS_BASE_PATH = ".claude/skills";
+
   struct tool_call {
     std::string id;
     std::string type;
@@ -93,15 +96,27 @@ namespace agent {
     public:
       ai_client(std::string host, std::string key)
         : _api_host{ host }, _api_key{ key }
-      {}
+      {
+        load_skills();
+      }
       
       void set_model(std::string model) { _model = model; }
       const std::string get_model() const { return _model; }
 
       void do_req(std::vector<message>& messages);
+
+      bool has_skill(const std::string& name) const {
+        return _skill_cache.count(name) > 0;
+      }
+
+      void add_skill_messages(std::vector<message>& messages);
     private:
+      void load_skills();
+
       std::string _api_host;
       std::string _api_key;
       std::string _model;
+      std::vector<skills::skill> _skills;
+      std::unordered_map<std::string, bool> _skill_cache;
   };
 }

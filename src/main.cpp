@@ -38,8 +38,6 @@ int main(int argc, char* argv[]) {
         std::cerr << "Prompt must not be empty" << std::endl;
         return 1;
     }
-    parser::input input;
-    parser::parse_input(prompt, input);
 
     const char* api_key_env = std::getenv("OPENROUTER_API_KEY");
     const char* base_url_env = std::getenv("OPENROUTER_BASE_URL");
@@ -55,6 +53,9 @@ int main(int argc, char* argv[]) {
     agent::ai_client client(base_url, api_key);
     client.set_model("anthropic/claude-haiku-4.5");
 
+    std::vector<parser::input> inputs;
+    parser::parse_input(client, prompt, inputs);
+
     std::vector<std::filesystem::path> skill_paths;
     utils::read_dir(".claude/skills", skill_paths);
 
@@ -66,24 +67,18 @@ int main(int argc, char* argv[]) {
 
     std::vector<agent::message> messages;
 
-    if (skills.size() > 0) {
-        std::string skills_msg = "You have access to the following skills:\n\n";
-        for (const auto& skill : skills) {
-            if (!skill.is_valid()) continue;
-            skills_msg += "- " + skill.name() + ": " + skill.description() + "\n";
-        }
-        messages.emplace_back(agent::message{"system", skills_msg});
-    }
+    client.add_skill_messages(messages);
 
-    if (input.type == parser::input_type::COMMAND) {
-        for (auto& skill : skills) {
-            if (prompt.find("/" + input.command) != std::string::npos) {
-                messages.emplace_back(agent::message{"user", skill.get_content(input)});
-                break;
+    for (const parser::input& input : inputs) {
+        if (input.type == parser::input_type::COMMAND) {
+            for (auto& skill : skills) {
+                if (skill.name() == input.command) {
+                    messages.emplace_back(agent::message{"user", skill.get_content(input)});
+                }
             }
+        } else {
+            messages.emplace_back(agent::message{"user", input.content});
         }
-    } else {
-        messages.emplace_back(agent::message{"user", input.content});
     }
 
     while (true) {

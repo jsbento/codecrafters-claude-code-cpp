@@ -3,6 +3,10 @@
 #include <string>
 #include <vector>
 
+namespace agent {
+    class ai_client;
+}
+
 namespace parser {
     enum class input_type {
       MESSAGE = 0,
@@ -16,5 +20,5 @@ namespace parser {
         std::vector<std::string> args;
     };
 
-    void parse_input(const std::string& in, input& out);
+    void parse_input(agent::ai_client& ai_client, const std::string& in, std::vector<input>& out);
 }
